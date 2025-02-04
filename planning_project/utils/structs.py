@@ -1,8 +1,3 @@
-"""
-description: a script containing data structures
-author: Masafumi Endo
-"""
-
 import dataclasses
 import numpy as np
 
