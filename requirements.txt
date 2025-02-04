@@ -1,0 +1,13 @@
+numpy
+scipy
+seaborn
+jupyterlab
+matplotlib
+opensimplex
+torch
+segmentation-models-pytorch==0.2.1
+tensorboard
+GPy
+scikit-learn
+cuda-python
+numba
