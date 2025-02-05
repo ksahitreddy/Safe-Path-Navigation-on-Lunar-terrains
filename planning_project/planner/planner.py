@@ -1,8 +1,3 @@
-"""
-description: a planner class based on the conventional A* algorithm. 
-author: Masafumi Endo
-"""
-
 import heapq
 import sys, os
 BASE_PATH = os.path.dirname(__file__)
