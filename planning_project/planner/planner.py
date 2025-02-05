@@ -1,3 +1,8 @@
+"""
+description: a planner class based on the conventional A* algorithm. 
+author: Masafumi Endo
+"""
+
 import heapq
 import sys, os
 BASE_PATH = os.path.dirname(__file__)
@@ -6,8 +11,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import cupy as cp
-from numba import cuda
 from concurrent.futures import ThreadPoolExecutor
 from planning_project.utils.structs import EvalMetrics
 from planning_project.planner.cost_calculator import CostEstimator, CostObserver
@@ -269,35 +272,35 @@ class AStarPlanner:
         return 0 <= x_id < self.map.n and 0 <= y_id < self.map.n
            
 
-    def get_neighboring_nodes(self, node):
-        motions = cp.array(self.motion)
-        node_pos = cp.array(node.xy_ids)
-        
-        # Calculate all potential neighbors in parallel on GPU
-        x_ids = node_pos[0] + motions[:, 0]
-        y_ids = node_pos[1] + motions[:, 1]
-        
-        # Create mask for valid positions
-        valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
-        
-        # Get valid positions
-        valid_x = cp.asnumpy(x_ids[valid_mask])
-        valid_y = cp.asnumpy(y_ids[valid_mask])
-        
-        # Create node objects for valid positions
-        neighbors_list = [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
-        
-        return neighbors_list
+	def get_neighboring_nodes(self, node):
+		motions = np.array(self.motion)
+		node_pos = np.array(node.xy_ids)
+		
+		# Calculate all potential neighbors
+		x_ids = node_pos[0] + motions[:, 0]
+		y_ids = node_pos[1] + motions[:, 1]
+		
+		# Create mask for valid positions
+		valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
+		
+		# Get valid positions
+		valid_x = x_ids[valid_mask]
+		valid_y = y_ids[valid_mask]
+		
+		# Create node objects for valid positions
+		neighbors_list = [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
+		
+		return neighbors_list
 
 
-    def calc_heuristic(self, node, vel_ref: float = 0.1):
-      """Cached heuristic calculation"""
-      node_key = node.xy_ids
-      if node_key not in self.heuristic_cache:
-          pos = cp.array(self.calc_pos_from_xy_id(node.xy_ids))
-          pos_goal = cp.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
-          self.heuristic_cache[node_key] = float(cp.linalg.norm(pos - pos_goal).get()) / vel_ref
-      return self.heuristic_cache[node_key]
+	def calc_heuristic(self, node, vel_ref: float = 0.1):
+		"""Cached heuristic calculation"""
+		node_key = node.xy_ids
+		if node_key not in self.heuristic_cache:
+		    pos = np.array(self.calc_pos_from_xy_id(node.xy_ids))
+		    pos_goal = np.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
+		    self.heuristic_cache[node_key] = float(np.linalg.norm(pos - pos_goal)) / vel_ref
+		return self.heuristic_cache[node_key]
 
 
     def calc_pos_from_xy_id(self, xy_ids: tuple):
