@@ -96,7 +96,6 @@ class PriorityHeapQueue:
         """
         return node in self.nodes
 
-
 class AStarPlanner:
     def __init__(self, map, smg, nn_model_dir):
         """
@@ -175,9 +174,70 @@ class AStarPlanner:
             pred = self.pred_prob
         return CostEstimator(self.smg, self.map, pred, plan_metrics)
 
+    def search_path(self):
+        """
+        Optimized A* search algorithm implementation
+        """
+        # Use sets for faster membership testing
+        open_set = {self.node_start}
+        closed_set = set()
+        
+        # Use dictionary to store f_scores and g_scores
+        f_scores = {self.node_start: self.calc_heuristic(self.node_start)}
+        g_scores = {self.node_start: 0}
+        
+        # Use dictionary to store parent nodes
+        came_from = {}
+        
+        while open_set:
+            # Find node with lowest f_score (more efficient than using a priority queue)
+            current = min(open_set, key=lambda node: f_scores.get(node, float('inf')))
+            
+            if current == self.node_goal:
+                self.node_goal.node_p = came_from.get(current)
+                break
+                
+            open_set.remove(current)
+            closed_set.add(current)
+            
+            # Get neighbors using GPU acceleration
+            neighbors = self.get_neighboring_nodes(current)
+            
+            # Process all neighbors in batch where possible
+            for neighbor in neighbors:
+                if neighbor in closed_set:
+                    continue
+                    
+                # Calculate tentative g_score
+                cost_edge, is_feasible = self.cost_estimator.calc_cost(current, neighbor)
+                if not is_feasible:
+                    continue
+                    
+                tentative_g_score = g_scores[current] + cost_edge
+                
+                if neighbor not in open_set:
+                    open_set.add(neighbor)
+                elif tentative_g_score >= g_scores.get(neighbor, float('inf')):
+                    continue
+                
+                # This path is better, record it
+                came_from[neighbor] = current
+                g_scores[neighbor] = tentative_g_score
+                f_scores[neighbor] = tentative_g_score + self.calc_heuristic(neighbor)
+                neighbor.g = tentative_g_score
+                neighbor.f = f_scores[neighbor]
+                neighbor.h = f_scores[neighbor] - tentative_g_score
+                neighbor.node_p = current
+        
+        self.path, self.nodes = self.get_final_path()
+        return self.path, self.nodes
+
     def is_inside_map(self, x_id: int, y_id: int):
         """
         is_inside_map: verify the given x- and y-axis indices are feasible or not
+        
+        :param x_id: x-axis index
+        :param y_id: y-axis index
         """
         return 0 <= x_id < self.map.n and 0 <= y_id < self.map.n
 
@@ -200,7 +260,6 @@ class AStarPlanner:
             self.heuristic_cache[node_key] = float(np.linalg.norm(pos - pos_goal)) / vel_ref
         return self.heuristic_cache[node_key]
 
-	
     def calc_pos_from_xy_id(self, xy_ids: tuple):
         """
         calc_pos_from_xy_id: calculate positional information from indices
