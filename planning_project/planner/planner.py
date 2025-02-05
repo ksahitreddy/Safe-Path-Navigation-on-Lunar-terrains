@@ -1,18 +1,22 @@
 import heapq
 import sys, os
+
 BASE_PATH = os.path.dirname(__file__)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 from concurrent.futures import ThreadPoolExecutor
+
 from planning_project.utils.structs import EvalMetrics
 from planning_project.planner.cost_calculator import CostEstimator, CostObserver
 from planning_project.planner.motion_model import motion_model
 from planning_project.utils.viz import viz_terrain_props, viz_2d_map, viz_3d_map, viz_slip_models
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 class Node:
     def __init__(self, xy_ids: tuple, node_p):
@@ -24,14 +28,12 @@ class Node:
         """
         self.xy_ids = xy_ids
         self.node_p = node_p
-        
+
         self.f = 0
         self.g = 0
         self.h = 0
 
     def __eq__(self, other):
-        # Define equality based on Node attributes
-        # For example:
         """
         __eq__: check equality of two nodes' positions
         """
@@ -55,12 +57,11 @@ class Node:
         """
         return f'cost at node: {self.f}'
 
+
 class PriorityHeapQueue:
-    
     def __init__(self):
         """
-        __init__: 
-
+        __init__:
         """
         self.nodes = []
 
@@ -75,7 +76,6 @@ class PriorityHeapQueue:
     def update(self, node):
         """
         update: update cost value of the already existing node
-        
         """
         node_id = self.nodes.index(node)
         if node.f < self.nodes[node_id].f:
@@ -85,10 +85,8 @@ class PriorityHeapQueue:
     def pop(self):
         """
         pop: find best node and remove it from open/closed list
-
         """
-        node_best = heapq.heappop(self.nodes)
-        return node_best
+        return heapq.heappop(self.nodes)
 
     def test(self, node):
         """
@@ -96,38 +94,31 @@ class PriorityHeapQueue:
 
         :param node: tested node
         """
-        if node in self.nodes:
-            return True
-        else:
-            return False
+        return node in self.nodes
 
 
 class AStarPlanner:
-
     def __init__(self, map, smg, nn_model_dir):
         """
         __init__:
 
         :param map: given discretized environment map
         :param smg: slip models generator class
-        :param hyper_params: hyper parameter structure
+        :param nn_model_dir: directory of the neural network model
         """
         self.smg = smg
         self.nn_model_dir = nn_model_dir
 
         if map is None:
-            # init w/o map information
             self.map = None
             self.cost_estimator = None
             self.cost_observer = None
         else:
-            # init w/ map information
             self.map = map
-            self.cost_estimator = None # estimator for path planning
+            self.cost_estimator = None
             self.cost_observer = CostObserver(self.smg, self.map)
 
         self.motion = motion_model()
-
         self.node_start = None
         self.node_goal = None
         self.node_failed = None
@@ -136,22 +127,15 @@ class AStarPlanner:
 
         self.pred = None
         self.pred_prob = None
-		
-		# Cache for commonly used calculations
+
+        # Cache for commonly used calculations
         self.heuristic_cache = {}
         self.cost_cache = {}
-      
 
     def reset(self, map, start_pos: tuple, goal_pos: tuple, plan_metrics):
         """
         reset: reset position and the use of NN prediction
-
-        :param map: new problem instance
-        :param start_pos: start position [m]
-        :param goal_pos: goal position [m]
-        :param plan_metrics: structure containing planning metrics
         """
-        # prepare map and prediction
         self.map = map
         if plan_metrics.type_model != "gtm":
             _ = self.predict(self.map.data.color.transpose(2, 0, 1).astype(np.float32))
@@ -159,11 +143,11 @@ class AStarPlanner:
             self.pred = None
             self.pred_prob = None
 
-        self.cost_estimator = self.set_cost_estimator(plan_metrics) # estimator for path planning
+        self.cost_estimator = self.set_cost_estimator(plan_metrics)
         self.cost_observer = CostObserver(self.smg, self.map)
 
-        self.node_start = Node((self.map.get_xy_id_from_xy_pos(start_pos[0], start_pos[1])), None)
-        self.node_goal = Node((self.map.get_xy_id_from_xy_pos(goal_pos[0], goal_pos[1])), None)
+        self.node_start = Node(self.map.get_xy_id_from_xy_pos(start_pos[0], start_pos[1]), None)
+        self.node_goal = Node(self.map.get_xy_id_from_xy_pos(goal_pos[0], goal_pos[1]), None)
         self.node_failed = None
         self.path = None
         self.nodes = []
@@ -171,133 +155,52 @@ class AStarPlanner:
     def predict(self, color_map):
         """
         predict: predict terrain types via trained networks
-        
-        :param color_map: given color map for network prediction
         """
         best_model = torch.load(self.nn_model_dir, map_location=torch.device(DEVICE))
-        input = torch.tensor(color_map).unsqueeze(0)
-        pred = best_model(input.to(DEVICE)) # torch.size([1, dim, n, n])
-        self.pred_prob = pred[0].cpu().detach().numpy() # np.array([dim, n, n]) -> probability prediction
-        pred = np.argmax(self.pred_prob, axis=0) # np.array([n, n]) -> distinctive prediction
-        self.pred = np.ravel(pred)
+        input_tensor = torch.tensor(color_map).unsqueeze(0)
+        pred = best_model(input_tensor.to(DEVICE))
+        self.pred_prob = pred[0].cpu().detach().numpy()
+        self.pred = np.argmax(self.pred_prob, axis=0)
         return self.pred
 
     def set_cost_estimator(self, plan_metrics):
         """
-        set_cost_estimator: set cost estimator class 
-
-        :param plan_metrics: structure containing planning metrics
+        set_cost_estimator: set cost estimator class
         """
-        if plan_metrics.type_model == "gtm": # ground truth model
+        if plan_metrics.type_model == "gtm":
             pred = self.map.data.t_class
-        elif plan_metrics.type_model == "gsm": # gaussian single model
+        elif plan_metrics.type_model == "gsm":
             pred = self.pred
-        elif plan_metrics.type_model == "gmm": # gaussian mixture model
+        elif plan_metrics.type_model == "gmm":
             pred = self.pred_prob
-        cost_estimator = CostEstimator(self.smg, self.map, pred, plan_metrics)
-        return cost_estimator
-
-
-
-    def search_path(self):
-        """
-        Optimized A* search algorithm implementation
-        """
-        # Use sets for faster membership testing
-        open_set = {self.node_start}
-        closed_set = set()
-        
-        # Use dictionary to store f_scores and g_scores
-        f_scores = {self.node_start: self.calc_heuristic(self.node_start)}
-        g_scores = {self.node_start: 0}
-        
-        # Use dictionary to store parent nodes
-        came_from = {}
-        
-        while open_set:
-            # Find node with lowest f_score (more efficient than using a priority queue)
-            current = min(open_set, key=lambda node: f_scores.get(node, float('inf')))
-            
-            if current == self.node_goal:
-                self.node_goal.node_p = came_from.get(current)
-                break
-                
-            open_set.remove(current)
-            closed_set.add(current)
-            
-            # Get neighbors using GPU acceleration
-            neighbors = self.get_neighboring_nodes(current)
-            
-            # Process all neighbors in batch where possible
-            for neighbor in neighbors:
-                if neighbor in closed_set:
-                    continue
-                    
-                # Calculate tentative g_score
-                cost_edge, is_feasible = self.cost_estimator.calc_cost(current, neighbor)
-                if not is_feasible:
-                    continue
-                    
-                tentative_g_score = g_scores[current] + cost_edge
-                
-                if neighbor not in open_set:
-                    open_set.add(neighbor)
-                elif tentative_g_score >= g_scores.get(neighbor, float('inf')):
-                    continue
-                
-                # This path is better, record it
-                came_from[neighbor] = current
-                g_scores[neighbor] = tentative_g_score
-                f_scores[neighbor] = tentative_g_score + self.calc_heuristic(neighbor)
-                neighbor.g = tentative_g_score
-                neighbor.f = f_scores[neighbor]
-                neighbor.h = f_scores[neighbor] - tentative_g_score
-                neighbor.node_p = current
-        
-        self.path, self.nodes = self.get_final_path()
-        return self.path, self.nodes
+        return CostEstimator(self.smg, self.map, pred, plan_metrics)
 
     def is_inside_map(self, x_id: int, y_id: int):
         """
         is_inside_map: verify the given x- and y-axis indices are feasible or not
-        
-        :param x_id: x-axis index
-        :param y_id: y-axis index
         """
         return 0 <= x_id < self.map.n and 0 <= y_id < self.map.n
-           
 
-	def get_neighboring_nodes(self, node):
-		motions = np.array(self.motion)
-		node_pos = np.array(node.xy_ids)
-		
-		# Calculate all potential neighbors
-		x_ids = node_pos[0] + motions[:, 0]
-		y_ids = node_pos[1] + motions[:, 1]
-		
-		# Create mask for valid positions
-		valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
-		
-		# Get valid positions
-		valid_x = x_ids[valid_mask]
-		valid_y = y_ids[valid_mask]
-		
-		# Create node objects for valid positions
-		neighbors_list = [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
-		
-		return neighbors_list
+    def get_neighboring_nodes(self, node):
+        motions = np.array(self.motion)
+        node_pos = np.array(node.xy_ids)
+        x_ids = node_pos[0] + motions[:, 0]
+        y_ids = node_pos[1] + motions[:, 1]
+        valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
+        valid_x = x_ids[valid_mask]
+        valid_y = y_ids[valid_mask]
+        return [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
 
+    def calc_heuristic(self, node, vel_ref: float = 0.1):
+        """Cached heuristic calculation"""
+        node_key = node.xy_ids
+        if node_key not in self.heuristic_cache:
+            pos = np.array(self.calc_pos_from_xy_id(node.xy_ids))
+            pos_goal = np.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
+            self.heuristic_cache[node_key] = float(np.linalg.norm(pos - pos_goal)) / vel_ref
+        return self.heuristic_cache[node_key]
 
-	def calc_heuristic(self, node, vel_ref: float = 0.1):
-		"""Cached heuristic calculation"""
-		node_key = node.xy_ids
-		if node_key not in self.heuristic_cache:
-		    pos = np.array(self.calc_pos_from_xy_id(node.xy_ids))
-		    pos_goal = np.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
-		    self.heuristic_cache[node_key] = float(np.linalg.norm(pos - pos_goal)) / vel_ref
-		return self.heuristic_cache[node_key]
-
-
+	
     def calc_pos_from_xy_id(self, xy_ids: tuple):
         """
         calc_pos_from_xy_id: calculate positional information from indices
