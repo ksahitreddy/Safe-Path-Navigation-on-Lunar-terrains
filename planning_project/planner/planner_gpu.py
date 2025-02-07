@@ -230,7 +230,7 @@ class AStarPlanner:
         Optimized A* search algorithm implementation
         """
         file_name = get_latest_npy()
-        cache_key = (file_name, tuple(self.node_start), tuple(self.node_goal))
+        cache_key = (file_name, self.node_start, self.node_goal)
         
         if cache_key in path_cache:
             print("Retrieving cached path and nodes...")
