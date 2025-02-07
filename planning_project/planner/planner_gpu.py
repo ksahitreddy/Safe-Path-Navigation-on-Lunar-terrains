@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import cupy as cp
+import pickle 
+import glob
+import os
 from numba import cuda
 from concurrent.futures import ThreadPoolExecutor
 from planning_project.utils.structs import EvalMetrics
@@ -16,6 +19,29 @@ from planning_project.utils.viz import viz_terrain_props, viz_2d_map, viz_3d_map
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Global cache dictionary
+path_cache = {}
+
+# Cache file for persistent storage
+CACHE_FILE = "path_cache.pkl"
+
+# Load cache from file if it exists
+if os.path.exists(CACHE_FILE):
+    with open(CACHE_FILE, "rb") as f:
+        path_cache = pickle.load(f)
+
+def save_cache():
+    """Save the cache dictionary to a file."""
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump(path_cache, f)
+
+def get_latest_npy():
+    """Fetch the latest .npy file from the predicted_npy directory."""
+    npy_files = glob.glob("predicted_npy/*.npy")
+    if not npy_files:
+        raise FileNotFoundError("No .npy files found in 'predicted_npy' directory.")
+    
+    return max(npy_files, key=os.path.getctime)  # Get the latest file based on creation time
 class Node:
     def __init__(self, xy_ids: tuple, node_p):
         """
@@ -205,6 +231,13 @@ class AStarPlanner:
         """
         Optimized A* search algorithm implementation
         """
+	file_name = get_latest_npy()
+	cache_key = (file_name, tuple(self.node_start), tuple(self.node_goal))
+	if cache_key in path_cache:
+		print("Retrieving cached path and nodes...")
+		return path_cache[cache_key]
+		
+	print(f"Computing new path for {file_name}...")
         # Use sets for faster membership testing
         open_set = {self.node_start}
         closed_set = set()
@@ -257,6 +290,8 @@ class AStarPlanner:
                 neighbor.node_p = current
         
         self.path, self.nodes = self.get_final_path()
+	path_cache[cache_key] = (self.path, self.nodes)
+	save_cache()
         return self.path, self.nodes
 
     def is_inside_map(self, x_id: int, y_id: int):
