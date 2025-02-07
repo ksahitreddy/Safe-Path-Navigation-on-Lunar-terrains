@@ -37,7 +37,7 @@ def save_cache():
 
 def get_latest_npy():
     """Fetch the latest .npy file from the predicted_npy directory."""
-    npy_files = glob.glob("predicted_npy/*.npy")
+    npy_files = glob.glob("../predicted_npy/*.npy")
     if not npy_files:
         raise FileNotFoundError("No .npy files found in 'predicted_npy' directory.")
     
