@@ -225,19 +225,19 @@ class AStarPlanner:
         cost_estimator = CostEstimator(self.smg, self.map, pred, plan_metrics)
         return cost_estimator
 
-
-
     def search_path(self):
         """
         Optimized A* search algorithm implementation
         """
-	file_name = get_latest_npy()
-	cache_key = (file_name, tuple(self.node_start), tuple(self.node_goal))
-	if cache_key in path_cache:
-		print("Retrieving cached path and nodes...")
-		return path_cache[cache_key]
-		
-	print(f"Computing new path for {file_name}...")
+        file_name = get_latest_npy()
+        cache_key = (file_name, tuple(self.node_start), tuple(self.node_goal))
+        
+        if cache_key in path_cache:
+            print("Retrieving cached path and nodes...")
+            return path_cache[cache_key]
+        
+        print(f"Computing new path for {file_name}...")
+        
         # Use sets for faster membership testing
         open_set = {self.node_start}
         closed_set = set()
@@ -256,7 +256,7 @@ class AStarPlanner:
             if current == self.node_goal:
                 self.node_goal.node_p = came_from.get(current)
                 break
-                
+            
             open_set.remove(current)
             closed_set.add(current)
             
@@ -267,12 +267,12 @@ class AStarPlanner:
             for neighbor in neighbors:
                 if neighbor in closed_set:
                     continue
-                    
+                
                 # Calculate tentative g_score
                 cost_edge, is_feasible = self.cost_estimator.calc_cost(current, neighbor)
                 if not is_feasible:
                     continue
-                    
+                
                 tentative_g_score = g_scores[current] + cost_edge
                 
                 if neighbor not in open_set:
@@ -290,85 +290,9 @@ class AStarPlanner:
                 neighbor.node_p = current
         
         self.path, self.nodes = self.get_final_path()
-	path_cache[cache_key] = (self.path, self.nodes)
-	save_cache()
+        path_cache[cache_key] = (self.path, self.nodes)
+        save_cache()
         return self.path, self.nodes
-
-    def is_inside_map(self, x_id: int, y_id: int):
-        """
-        is_inside_map: verify the given x- and y-axis indices are feasible or not
-        
-        :param x_id: x-axis index
-        :param y_id: y-axis index
-        """
-        return 0 <= x_id < self.map.n and 0 <= y_id < self.map.n
-           
-
-    def get_neighboring_nodes(self, node):
-        motions = cp.array(self.motion)
-        node_pos = cp.array(node.xy_ids)
-        
-        # Calculate all potential neighbors in parallel on GPU
-        x_ids = node_pos[0] + motions[:, 0]
-        y_ids = node_pos[1] + motions[:, 1]
-        
-        # Create mask for valid positions
-        valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
-        
-        # Get valid positions
-        valid_x = cp.asnumpy(x_ids[valid_mask])
-        valid_y = cp.asnumpy(y_ids[valid_mask])
-        
-        # Create node objects for valid positions
-        neighbors_list = [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
-        
-        return neighbors_list
-
-
-    def calc_heuristic(self, node, vel_ref: float = 0.1):
-      """Cached heuristic calculation"""
-      node_key = node.xy_ids
-      if node_key not in self.heuristic_cache:
-          pos = cp.array(self.calc_pos_from_xy_id(node.xy_ids))
-          pos_goal = cp.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
-          self.heuristic_cache[node_key] = float(cp.linalg.norm(pos - pos_goal).get()) / vel_ref
-      return self.heuristic_cache[node_key]
-
-
-    def calc_pos_from_xy_id(self, xy_ids: tuple):
-        """
-        calc_pos_from_xy_id: calculate positional information from indices
-
-        :param xy_ids: x- and y-axis indices
-        """
-        xy_pos = np.array(xy_ids) * self.map.res + np.array([self.map.lower_left_x, self.map.lower_left_y])
-        z_pos = self.map.get_value_from_xy_id(xy_ids[0], xy_ids[1])
-        pos = np.append(xy_pos, z_pos)
-        return pos
-
-    def get_final_path(self):
-        """
-        Optimized path reconstruction
-        """
-        if self.node_goal.node_p is None:  # no solution found
-            return None, []
-            
-        # Pre-allocate path array for better memory efficiency
-        path = []
-        nodes = []
-        current = self.node_goal
-        
-        while current is not None:
-            # Append positions and nodes in reverse order
-            path.append(self.calc_pos_from_xy_id(current.xy_ids))
-            nodes.append(current)
-            current = current.node_p
-            
-        # Reverse once at the end instead of using vstack
-        path = np.array(path[::-1])
-        nodes.reverse()
-        
-        return path, nodes
 
     def set_final_path(self, nodes: list):
         """
