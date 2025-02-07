@@ -26,7 +26,6 @@ class DataSet(data.Dataset):
         self.split = split
         self.dirname = os.path.join(self.dirname, self.split + '/')
         self.ids = os.listdir(self.dirname)
-        self.ids.remove('seed_info.npy') # remove data that contains seed information 
         self.data_fps = [os.path.join(self.dirname, idx) for idx in self.ids]
 
     def __len__(self):
