@@ -333,6 +333,30 @@ class AStarPlanner:
         z_pos = self.map.get_value_from_xy_id(xy_ids[0], xy_ids[1])
         pos = np.append(xy_pos, z_pos)
         return pos
+	    
+    def get_final_path(self):
+        """
+        Optimized path reconstruction
+        """
+        if self.node_goal.node_p is None:  # no solution found
+            return None, []
+            
+        # Pre-allocate path array for better memory efficiency
+        path = []
+        nodes = []
+        current = self.node_goal
+        
+        while current is not None:
+            # Append positions and nodes in reverse order
+            path.append(self.calc_pos_from_xy_id(current.xy_ids))
+            nodes.append(current)
+            current = current.node_p
+            
+        # Reverse once at the end instead of using vstack
+        path = np.array(path[::-1])
+        nodes.reverse()
+        
+        return path, nodes
 
     def set_final_path(self, nodes: list):
         """
