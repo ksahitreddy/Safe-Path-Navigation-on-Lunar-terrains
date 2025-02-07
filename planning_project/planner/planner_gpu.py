@@ -294,6 +294,46 @@ class AStarPlanner:
         save_cache()
         return self.path, self.nodes
 
+    def get_neighboring_nodes(self, node):
+        motions = cp.array(self.motion)
+        node_pos = cp.array(node.xy_ids)
+        
+        # Calculate all potential neighbors in parallel on GPU
+        x_ids = node_pos[0] + motions[:, 0]
+        y_ids = node_pos[1] + motions[:, 1]
+        
+        # Create mask for valid positions
+        valid_mask = (x_ids >= 0) & (x_ids < self.map.n) & (y_ids >= 0) & (y_ids < self.map.n)
+        
+        # Get valid positions
+        valid_x = cp.asnumpy(x_ids[valid_mask])
+        valid_y = cp.asnumpy(y_ids[valid_mask])
+        
+        # Create node objects for valid positions
+        neighbors_list = [Node((int(x), int(y)), node) for x, y in zip(valid_x, valid_y)]
+        
+        return neighbors_list
+
+    def calc_heuristic(self, node, vel_ref: float = 0.1):
+        """Cached heuristic calculation"""
+        node_key = node.xy_ids
+        if node_key not in self.heuristic_cache:
+            pos = cp.array(self.calc_pos_from_xy_id(node.xy_ids))
+            pos_goal = cp.array(self.calc_pos_from_xy_id(self.node_goal.xy_ids))
+            self.heuristic_cache[node_key] = float(cp.linalg.norm(pos - pos_goal).get()) / vel_ref
+        return self.heuristic_cache[node_key]
+
+    def calc_pos_from_xy_id(self, xy_ids: tuple):
+        """
+        calc_pos_from_xy_id: calculate positional information from indices
+
+        :param xy_ids: x- and y-axis indices
+        """
+        xy_pos = np.array(xy_ids) * self.map.res + np.array([self.map.lower_left_x, self.map.lower_left_y])
+        z_pos = self.map.get_value_from_xy_id(xy_ids[0], xy_ids[1])
+        pos = np.append(xy_pos, z_pos)
+        return pos
+
     def set_final_path(self, nodes: list):
         """
         set_final_path: set final path
